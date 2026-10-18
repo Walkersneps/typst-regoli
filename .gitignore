@@ -1,0 +1,7 @@
+target/
+tests/fixtures/
+/tests/output/
+__pycache__/
+
+.wakatime-project
+*.wasm
