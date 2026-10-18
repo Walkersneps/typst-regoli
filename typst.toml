@@ -7,13 +7,15 @@ authors = [
 ]
 license = "AGPL-3.0-only"
 description = "Import NumPy archives as numerical arrays."
-keywords = ["numpy", "npz", "arrays", "data", "wasm"]
-compiler = "0.14.0"
+keywords = ["numpy", "npz", "arrays", "data", "interoperability"]
+compiler = "0.15.0"
 exclude = [
-  "/regoli-core/",
-  "/tests/",
-  "/scripts/",
-  "/.github/",
-  "/.gitignore",
-  "/.wakatime-project",
+  "regoli-core/target/",
+  "scripts/",
+  "tests/",
+  ".dist/",
+  ".git",
+  ".github/",
+  ".gitignore",
+  ".wakatime-project",
 ]
