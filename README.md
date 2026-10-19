@@ -140,22 +140,39 @@ The build targets a pure
 `wasm32-unknown-unknown` module with no WASI, filesystem, network, or Python
 imports, implementing Typst's minimal plugin protocol.
 
-Development tests additionally require Python with NumPy, Typst, and
-optionally `typstyle`:
+Development tests require Rust with the WebAssembly target, Python with NumPy,
+`just`, and Tytanic 0.4.1 (which includes its Typst compiler). Install them
+with:
 
 ```powershell
-python -m pip install -r requirements-dev.txt
+rustup target add wasm32-unknown-unknown
+python -m pip install numpy
+cargo install --locked just
+cargo install --locked --version 0.4.1 tytanic
+```
+
+If `typstyle` is installed, `just test` also checks the formatting of Typst
+sources and tests.
+
+Run the full Rust and Typst package test suite with:
+
+```powershell
+just test
 .\scripts\test.ps1
 ```
 
-The test script generates real NumPy fixtures, runs Rust unit tests and
-Clippy, builds the WASM, checks/formats generated Typst assertions, compiles
-the example and integration assertions, checks failing Typst diagnostics,
-and verifies an isolated `@local` package import using runtime files only.
-Fixtures cover both ZIP compression modes, NPY header versions, all supported
-dtype widths and endiannesses, scalars, empty dimensions, Fortran ordering,
-integer bounds, special floats, and invalid input. Test outputs stay under
-`tests/output`; generated fixtures are not part of the published package.
+The Tytanic tests are tracked, compile-only Typst scripts for numerical
+decoding, error diagnostics, the example, and an isolated `@local` package
+import. The test command generates binary NumPy fixtures, runs Rust unit tests,
+Clippy and formatting checks, builds the WASM, then runs `tt`. Fixtures cover
+both ZIP compression modes, NPY header versions, all supported dtype widths
+and endiannesses, scalars, empty dimensions, Fortran ordering, integer bounds,
+special floats, and invalid input. Generated test fixtures and package files
+stay under `tests/output` and `tests/fixtures`; they are not part of the
+published package.
+
+On Windows, the `just` recipes require a POSIX-compatible shell such as Git
+Bash. The PowerShell wrapper runs the same `just test` command.
 
 After changing Rust dependencies, regenerate bundled license notices:
 

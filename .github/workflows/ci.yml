@@ -1,0 +1,38 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+
+      - name: Install NumPy
+        run: python -m pip install numpy
+
+      - name: Install just
+        uses: taiki-e/cache-cargo-install-action@v2
+        with:
+          tool: just
+
+      - name: Install Tytanic
+        uses: taiki-e/cache-cargo-install-action@v2
+        with:
+          tool: tytanic@0.4.1
+
+      - name: Run test suite
+        run: just test

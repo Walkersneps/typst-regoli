@@ -1,7 +1,6 @@
 """Create real NumPy archives and Typst assertions without a CBOR dependency."""
 
 import io
-import math
 from pathlib import Path
 import struct
 import warnings
@@ -23,24 +22,6 @@ def archive(name, entries, compression=zipfile.ZIP_STORED):
     with zipfile.ZipFile(FIXTURES / name, "w", compression=compression) as output:
         for key, value in entries:
             output.writestr(key, value)
-
-
-def typst(value):
-    if isinstance(value, list):
-        return "(" + "".join(typst(item) + "," for item in value) + ")"
-    if isinstance(value, bool):
-        return "true" if value else "false"
-    if isinstance(value, complex):
-        return f"(real: {typst(value.real)}, imag: {typst(value.imag)})"
-    if isinstance(value, float):
-        if math.isnan(value):
-            return "float.nan"
-        if math.isinf(value):
-            return ("-" if value < 0 else "") + "calc.inf"
-        return repr(value)
-    if value == -(2**63):
-        return "(-9223372036854775807 - 1)"
-    return str(value)
 
 
 def main():
@@ -69,7 +50,7 @@ def main():
                 values = [0, 1, 12] if kind == "u" else [-2, 0, 3]
                 arrays[f"{label}-{kind}{width}"] = np.array(values, dtype=dtype)
     for width in [2, 4, 8]:
-        dtype = np.dtype(f"f{width}")
+        dtype = np.dtype(f"<f{width}")
         info = np.finfo(dtype)
         arrays[f"float-edges-{width}"] = np.array(
             [-0.0, 0.5, -1.25, info.max, info.tiny, info.smallest_subnormal],
@@ -109,41 +90,7 @@ def main():
         {"descr": "<i8", "shape": (1,) * 33, "fortran_order": False},
     )
     archive("too-many-axes.npz", [("data.npy", header_buffer.getvalue() + b"\0" * 8)])
-    assertions = ['#import "../../src/lib.typ": decode-npz',
-                  '#let arrays = decode-npz(read("compressed.npz", encoding: none), metadata: true)']
-    for name, array in arrays.items():
-        key = f'arrays.at("{name}")'
-        assertions.append(f'#assert.eq({key}.shape, {typst(list(array.shape))})')
-        assertions.append(f'#assert.eq({key}.dtype, "{array.dtype.str}")')
-        if name != "special":
-            assertions.append(f'#assert.eq({key}.data, {typst(array.tolist())})')
-    assertions += [
-        '#assert.eq(arrays.fortran.fortran-order, true)',
-        '#assert.eq(arrays.matrix.fortran-order, false)',
-        '#assert.eq(arrays.special.data.at(0), calc.inf)',
-        '#assert.eq(arrays.special.data.at(1), -calc.inf)',
-        '#assert(arrays.special.data.at(2).is-nan())',
-        '#assert.eq(arrays.special.data.at(3).to-bytes().at(7), 128)',
-        '#assert.eq(type(arrays.matrix.data.at(0).at(0)), float)',
-        '#assert.eq(type(arrays.int64.data.at(0)), int)',
-        '#assert.eq(type(arrays.bools.data.at(0).at(0)), bool)',
-        '#assert.eq(decode-npz(read("stored.npz", encoding: none)).matrix, ((0.0, 1.0, 2.0), (3.0, 4.0, 5.0)))',
-        '#let positional = decode-npz(read("positional.npz", encoding: none))',
-        '#assert.eq(positional.arr_0, (1, 2))',
-        '#assert.eq(positional.arr_1, 3.5)',
-        '#let versions = decode-npz(read("versions.npz", encoding: none))',
-        '#assert.eq(versions.v2, (2.5,))',
-        '#assert.eq(versions.v3, (3.5,))',
-        '#assert.eq(decode-npz(read("empty.npz", encoding: none)), (:))',
-        '#assert.eq(decode-npz(read("directories.npz", encoding: none)).at("folder/x"), (0, 1, 2, 3))',
-        'NPZ integration assertions passed.',
-    ]
-    (FIXTURES / "integration.typ").write_text(
-        "\n".join(assertions) + "\n", encoding="utf-8", newline="\n",
-    )
-    np.savez_compressed(ROOT / "examples" / "sample.npz",
-                        matrix=np.arange(6, dtype="f8").reshape(2, 3))
-    print(f"Generated {len(arrays)} numerical arrays and invalid-input fixtures.")
+    print(f"Generated binary NPZ fixtures in {FIXTURES}.")
 
 
 if __name__ == "__main__":
