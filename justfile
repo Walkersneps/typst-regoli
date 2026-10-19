@@ -17,6 +17,10 @@ bundle: build
 publish: bundle
   tpix push "{{bundle-file}}" sneps
 
+test: lint testonly
+
+testonly: test-core test-library
+
 prepare-test: build
   python "scripts/generate_fixtures.py"
   mkdir -p "{{test-package}}/src"
@@ -27,9 +31,17 @@ prepare-test: build
   cp "LICENSE" "{{test-package}}/LICENSE"
   cp "regoli-core/THIRD-PARTY-LICENSES.txt" "{{test-package}}/THIRD-PARTY-LICENSES.txt"
 
-test *filter: prepare-test
-  cargo test --locked --manifest-path "regoli-core/Cargo.toml"
+lint-core:
   cargo clippy --locked --all-targets --manifest-path "regoli-core/Cargo.toml" -- -D warnings
   cargo fmt --check --manifest-path "regoli-core/Cargo.toml"
+
+lint-library:
   typstyle --check "src/lib.typ" "examples/example.typ" "tests/decode/test.typ" "tests/errors/test.typ" "tests/package-import/test.typ" "tests/example/test.typ"
+
+lint: lint-core lint-library
+
+test-core:
+  cargo test --locked --manifest-path "regoli-core/Cargo.toml"
+
+test-library *filter: prepare-test
   tt run --no-fail-fast --package-path "{{test-packages}}" {{filter}}
