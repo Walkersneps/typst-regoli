@@ -1,14 +1,17 @@
 [package]
 name = "regoli"
 version = "0.1.0"
-entrypoint = "src/lib.typ"
+repository = "https://github.com/walkersneps/typst-regoli"
 authors = [
   "Walter Carli <https://github.com/walkersneps"
 ]
 license = "AGPL-3.0-only"
 description = "Import NumPy archives as numerical arrays."
 keywords = ["numpy", "npz", "arrays", "data", "interoperability"]
+
 compiler = "0.15.0"
+entrypoint = "src/lib.typ"
+
 exclude = [
   "regoli-core/target/",
   "scripts/",
