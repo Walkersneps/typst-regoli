@@ -229,7 +229,10 @@ mod tests {
     use std::path::Path;
 
     fn fixture(name: &str) -> Vec<u8> {
-        std::fs::read(Path::new("tests").join("fixtures").join(name))
+        let repo_root = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .expect("regoli-core must be inside the repository");
+        std::fs::read(repo_root.join("tests").join("fixtures").join(name))
             .expect("run python scripts/generate_fixtures.py first")
     }
 

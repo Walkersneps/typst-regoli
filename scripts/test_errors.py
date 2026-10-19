@@ -23,7 +23,7 @@ def main():
     for index, (expression, expected) in enumerate(cases.items()):
         source = OUTPUT / f"error-{index}.typ"
         source.write_text(
-            '#import "../../lib.typ": decode-npz\n'
+            '#import "../../src/lib.typ": decode-npz\n'
             f"#decode-npz({expression})\n",
             encoding="utf-8", newline="\n",
         )

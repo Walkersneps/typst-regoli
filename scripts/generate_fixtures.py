@@ -109,7 +109,7 @@ def main():
         {"descr": "<i8", "shape": (1,) * 33, "fortran_order": False},
     )
     archive("too-many-axes.npz", [("data.npy", header_buffer.getvalue() + b"\0" * 8)])
-    assertions = ['#import "../../lib.typ": decode-npz',
+    assertions = ['#import "../../src/lib.typ": decode-npz',
                   '#let arrays = decode-npz(read("compressed.npz", encoding: none), metadata: true)']
     for name, array in arrays.items():
         key = f'arrays.at("{name}")'

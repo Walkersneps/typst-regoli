@@ -3,15 +3,16 @@ Push-Location (Split-Path $PSScriptRoot -Parent)
 try {
     python "scripts\generate_fixtures.py"
     if ($LASTEXITCODE -ne 0) { throw "Fixture generation failed" }
-    cargo test --locked
+    cargo test --locked --manifest-path "regoli-core\Cargo.toml"
     if ($LASTEXITCODE -ne 0) { throw "Rust tests failed" }
-    cargo clippy --locked --all-targets -- -D warnings
+    cargo clippy --locked --all-targets --manifest-path "regoli-core\Cargo.toml" -- -D warnings
     if ($LASTEXITCODE -ne 0) { throw "Rust lint failed" }
-    cargo fmt --check
+    cargo fmt --check --manifest-path "regoli-core\Cargo.toml"
     if ($LASTEXITCODE -ne 0) { throw "Rust format check failed" }
-    & "scripts\build.ps1"
+    just build
+    if ($LASTEXITCODE -ne 0) { throw "WASM build failed" }
     if (Get-Command typstyle -ErrorAction SilentlyContinue) {
-        typstyle --check "lib.typ" "examples\example.typ" "tests\package.typ"
+        typstyle --check "src\lib.typ" "examples\example.typ" "tests\package-local.typ"
         if ($LASTEXITCODE -ne 0) { throw "Typst format check failed" }
         typstyle --check "tests\fixtures\integration.typ"
         if ($LASTEXITCODE -ne 0) {
