@@ -7,7 +7,7 @@ build:
   cd regoli-core; \
   cargo build --release \
     --target wasm32-unknown-unknown; \
-  cp target/wasm32-unknown-unknown/release/regoli.wasm regoli.wasm
+  cp target/wasm32-unknown-unknown/release/regoli.wasm ../regoli.wasm
 
 bundle: build
   tpix bundle . -o "{{bundle-file}}"

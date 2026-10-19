@@ -1,4 +1,4 @@
-#let decoder = plugin("../regoli-core/regoli.wasm")
+#let decoder = plugin("../regoli.wasm")
 
 /// Decode an NPZ byte buffer into a dictionary of arrays.
 /// With metadata enabled, each value has data, shape, dtype, and fortran-order fields.
