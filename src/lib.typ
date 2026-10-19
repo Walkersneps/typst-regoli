@@ -15,3 +15,14 @@
     arrays.pairs().map(((name, value)) => (name, value.data)).to-dict()
   }
 }
+
+#let npz(source, metadata: false) = {
+  let data = if type(source) == path {
+    read(source, encoding: none)
+  } else if type(source) == bytes {
+    source
+  } else {
+    assert(false, message: "npz expects either a path or bytes")
+  }
+  npz(data, metadata: metadata)
+}
