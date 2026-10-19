@@ -24,5 +24,5 @@
   } else {
     assert(false, message: "npz expects either a path or bytes")
   }
-  npz(data, metadata: metadata)
+  decode-npz(data, metadata: metadata)
 }
