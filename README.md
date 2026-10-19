@@ -8,9 +8,10 @@ Both
 The bundled WebAssembly decoder runs inside Typst: users do not need
 Python, NumPy, Rust, filesystem plugins, or preprocessing.
 
-Requires **Typst 0.14.0 or newer**. This package is not yet published on
+Requires **Typst 0.15.0 or newer**.
+This package is not yet published on
 Typst Universe.
-It is however published on the alternative package registry [TPIX](https://tpix.typstify.com).
+It is currently published on the alternative package registry [TPIX](https://tpix.typstify.com).
 
 ## Quick start
 
@@ -26,26 +27,28 @@ np.savez_compressed(
 )
 ```
 
-With this project beside your document, import its entrypoint:
+In your typst document, import the library:
 
 ```typst
-#import "lib.typ": decode-npz
+#import "@sneps/regoli:0.1.0" as regoli
 
-#let results = decode-npz(read("results.npz", encoding: none))
+#let data = regoli.npz(path("results.npz"))
 #assert.eq(results.matrix, ((1.0, 2.0), (3.0, 4.0)))
 #assert.eq(results.counts, (10, 20))
 
 #table(columns: 2, ..results.matrix.flatten().map(x => [#x]))
 ```
 
-Call `read` in your own document, rather than passing a filename into the
-package. This makes relative paths resolve next to your document and works
-with Typst's package filesystem isolation. For a working example using the
-included archive, compile:
+Then, before compiling the document, have TPIX fetch your project's dependencies (including ```regoli```):
 
-```powershell
-typst compile --root . examples\example.typ
+```bash
+tpix pull
 ```
+
+This will download the `regoli` package and any other dependencies specified in Typst's local cache,
+making them available for your project.
+
+You can now compile your document as usual.
 
 ## API
 
@@ -78,6 +81,10 @@ Enable metadata to retain exact shapes, including dimensions after a zero:
 Each metadata value is a dictionary with `data`, `shape`, `dtype`, and
 `fortran-order`. `shape` is an array of dimensions; scalars have shape `()`.
 An archive with no arrays returns `(:)`.
+
+### `npz(source, metadata: false)`
+
+Wrapper around `decode-npz` that accepts either a file path or raw bytes.
 
 ## Supported data and limitations
 
@@ -121,10 +128,15 @@ Rust toolchain and the WebAssembly target:
 
 ```powershell
 rustup target add wasm32-unknown-unknown
-.\scripts\build.ps1
 ```
 
-The build uses the committed `Cargo.lock`. It targets a pure
+Then, you can start a build with [just](https://github.com/casey/just):
+
+```powershell
+just build
+```
+
+The build targets a pure
 `wasm32-unknown-unknown` module with no WASI, filesystem, network, or Python
 imports, implementing Typst's minimal plugin protocol.
 
@@ -154,15 +166,10 @@ python scripts\generate_licenses.py
 ## Local package installation
 
 Following the [Typst package repository guidelines](https://github.com/typst/packages),
-copy these runtime files into
-`%APPDATA%\typst\packages\local\regoli\0.1.0` on Windows:
-
-- `typst.toml`
-- `lib.typ`
-- `regoli.wasm`
-- `README.md`
-- `LICENSE`
-- `THIRD-PARTY-LICENSES.txt`
+you can test the package locally during development or before publishing by
+copying the project runtime files into Typst's local package directory, e.g.,
+`%APPDATA%\typst\packages\local\regoli\{version-num}\` on Windows.
+For more information, refer to the [relevant documentation section](https://github.com/typst/packages#local-packages).
 
 Then import with:
 
@@ -174,7 +181,7 @@ Then import with:
 Use `typst info` to locate your actual package data directory when supported
 by your compiler.
 
-## Publishing to Typst Universe
+## Publishing to a package registry
 
 The root `typst.toml` declares the package entrypoint, version, compiler
 requirement, author, license, and exclusions for build/test-only files.
@@ -182,19 +189,29 @@ The distinctive package name follows the repository's naming guidelines.
 Name availability and acceptance still need to be confirmed at submission.
 
 1. Rebuild and run all tests; regenerate dependency license notices.
-2. Fork/clone [typst/packages](https://github.com/typst/packages) and add the
+2. Bump the project version
+3. Publishing paths differ depending on the target registry:
+
+### TPIX
+
+You can directly bundle and publish the package with the corresponding *just* recipe.
+
+```powershell
+just publish
+```
+
+### Typst Universe
+
+1. Fork/clone [typst/packages](https://github.com/typst/packages) and add the
    package under `packages/preview/regoli/0.1.0`.
-3. Include the runtime files above and, optionally, `examples/` with its
+2. Include the runtime files (those not explicitly excluded in `typst.toml`) and,
+   optionally, `examples/` with its
    `sample.npz`. Keep build outputs, test fixtures, and PDFs out of the bundle.
    Keep Rust sources and build scripts in your development repository so
-   reviewers can reproduce the binary; add its real URL to `repository` in
-   the manifest before submitting (none is invented here).
-4. Test an absolute package import using a temporary `preview` package path,
+   reviewers can reproduce the binary.
+3. Test an absolute package import using a temporary `preview` package path,
    then open a pull request with the binary's source/build instructions.
-5. Only after acceptance is `@preview/regoli:0.1.0` publicly available.
-
-No publishing or global/local package installation is performed by the build
-or test scripts.
+4. Only after acceptance is `@preview/regoli:{version}` publicly available.
 
 ## License
 
