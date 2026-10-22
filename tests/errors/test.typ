@@ -1,11 +1,14 @@
 #import "/src/lib.typ": decode-npz
 
 #let expect-diagnostic(action, fragment) = {
-  let message = catch(action)
-  assert(message != none, message: "Expected the operation to fail.")
+  let diagnostic = catch(action)
+  assert(diagnostic != none, message: "Expected the operation to fail.")
   assert(
-    str.contains(message, fragment),
-    message: "Expected diagnostic to contain: " + fragment,
+    str.contains(diagnostic, fragment),
+    message: "Expected diagnostic to contain: "
+      + fragment
+      + ". Got: "
+      + diagnostic,
   )
 }
 

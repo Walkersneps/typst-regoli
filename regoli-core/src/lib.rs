@@ -307,8 +307,10 @@ mod tests {
         let mut exact = 3;
         assert!(decode_npy(&entry, &mut exact).is_ok());
         assert_eq!(exact, 0);
-        assert!(decode_npy(&entry, &mut 2)
-            .unwrap_err()
-            .contains("array-node limit"));
+        assert!(
+            decode_npy(&entry, &mut 2)
+                .unwrap_err()
+                .contains("array-node limit")
+        );
     }
 }
