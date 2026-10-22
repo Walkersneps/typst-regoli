@@ -11,6 +11,80 @@ const MAX_NODES: usize = 1_000_000;
 const MAX_RANK: usize = 32;
 const MAX_ENTRIES: usize = 1024;
 
+#[derive(Clone, Copy, Debug)]
+struct RowSelection {
+    every: usize,
+    start: usize,
+    max_rows: Option<usize>,
+}
+
+impl RowSelection {
+    fn all() -> Self {
+        Self {
+            every: 1,
+            start: 0,
+            max_rows: None,
+        }
+    }
+
+    fn parse(bytes: &[u8]) -> Result<Self, String> {
+        let value: Value = ciborium::from_reader(bytes).map_err(error)?;
+        let Value::Map(fields) = value else {
+            return Err(error("decoder options must be a CBOR map"));
+        };
+        let get = |name: &str| {
+            fields
+                .iter()
+                .find(|(key, _)| key == &Value::Text(name.into()))
+                .map(|(_, value)| value)
+        };
+        let integer = |name: &str, default: usize| -> Result<usize, String> {
+            let Some(value) = get(name) else {
+                return Ok(default);
+            };
+            let Value::Integer(value) = value else {
+                return Err(error(format!("{name} must be a non-negative integer")));
+            };
+            usize::try_from(i128::from(*value))
+                .map_err(|_| error(format!("{name} must be a non-negative integer")))
+        };
+        let every = integer("every", 1)?;
+        if every == 0 {
+            return Err(error("every must be a positive integer"));
+        }
+        let start = integer("start", 0)?;
+        let max_rows = match get("max-rows") {
+            None | Some(Value::Null) => None,
+            Some(Value::Integer(value)) => Some(
+                usize::try_from(i128::from(*value))
+                    .map_err(|_| error("max-rows must be a non-negative integer or none"))?,
+            ),
+            Some(_) => {
+                return Err(error("max-rows must be a non-negative integer or none"));
+            }
+        };
+        Ok(Self {
+            every,
+            start,
+            max_rows,
+        })
+    }
+
+    fn rows(self, count: usize) -> impl Iterator<Item = usize> {
+        (self.start..count)
+            .step_by(self.every)
+            .take(self.max_rows.unwrap_or(usize::MAX))
+    }
+}
+
+fn validate_scalar(bytes: &[u8], kind: u8, big_endian: bool) -> Result<(), String> {
+    if kind == b'u' {
+        i64::try_from(unsigned(bytes, big_endian))
+            .map_err(|_| "uint64 value exceeds Typst's exact integer range (2^63 - 1)")?;
+    }
+    Ok(())
+}
+
 fn error(message: impl std::fmt::Display) -> String {
     format!("regoli: {message}")
 }
@@ -25,8 +99,18 @@ fn map(fields: impl IntoIterator<Item = (&'static str, Value)>) -> Value {
 }
 
 /// Decode without filesystem access or state shared between plugin calls.
-#[cfg_attr(target_arch = "wasm32", wasm_minimal_protocol::wasm_func)]
 pub fn decode(input: &[u8]) -> Result<Vec<u8>, String> {
+    decode_with_selection(input, RowSelection::all())
+}
+
+/// Decode an archive, applying row selection before constructing output values.
+#[cfg_attr(target_arch = "wasm32", wasm_minimal_protocol::wasm_func)]
+pub fn decode_with_options(input: &[u8], options: &[u8]) -> Result<Vec<u8>, String> {
+    let selection = RowSelection::parse(options)?;
+    decode_with_selection(input, selection)
+}
+
+fn decode_with_selection(input: &[u8], selection: RowSelection) -> Result<Vec<u8>, String> {
     if input.len() > MAX_BYTES {
         return Err(error("archive exceeds the 64 MiB input limit"));
     }
@@ -76,7 +160,8 @@ pub fn decode(input: &[u8]) -> Result<Vec<u8>, String> {
         if bytes.len() != size {
             return Err(error(format!("{name}: invalid decompressed entry size")));
         }
-        let array = decode_npy(&bytes, &mut budget).map_err(|e| error(format!("{name}: {e}")))?;
+        let array = decode_npy(&bytes, &mut budget, selection)
+            .map_err(|e| error(format!("{name}: {e}")))?;
         output.push((Value::Text(name), array));
     }
     let mut encoded = Vec::new();
@@ -84,7 +169,7 @@ pub fn decode(input: &[u8]) -> Result<Vec<u8>, String> {
     Ok(encoded)
 }
 
-fn decode_npy(bytes: &[u8], budget: &mut usize) -> Result<Value, String> {
+fn decode_npy(bytes: &[u8], budget: &mut usize, selection: RowSelection) -> Result<Value, String> {
     let header::Header {
         dtype,
         shape,
@@ -107,10 +192,10 @@ fn decode_npy(bytes: &[u8], budget: &mut usize) -> Result<Value, String> {
     if count.checked_mul(width) != Some(data.len()) {
         return Err("NPY data length does not match shape and dtype".into());
     }
-    let values = data
-        .chunks_exact(width)
-        .map(|chunk| scalar(chunk, kind, big_endian))
-        .collect::<Result<Vec<_>, _>>()?;
+    // Validate every element, including rows omitted from the output.
+    for chunk in data.chunks_exact(width) {
+        validate_scalar(chunk, kind, big_endian)?;
+    }
     let mut strides = vec![1usize; shape.len()];
     if fortran {
         for i in 1..shape.len() {
@@ -125,13 +210,40 @@ fn decode_npy(bytes: &[u8], budget: &mut usize) -> Result<Value, String> {
                 .ok_or("array strides overflow")?;
         }
     }
-    let nested = nest(&values, &shape, &strides, 0);
+    let selected_shape = if shape.is_empty() {
+        shape.clone()
+    } else {
+        let selected_rows = selection.rows(shape[0]).count();
+        let mut selected_shape = shape.clone();
+        selected_shape[0] = selected_rows;
+        selected_shape
+    };
+    let nested = if shape.is_empty() {
+        scalar(data, kind, big_endian)?
+    } else {
+        Value::Array(
+            selection
+                .rows(shape[0])
+                .map(|row| {
+                    nest_npy(
+                        data,
+                        kind,
+                        width,
+                        big_endian,
+                        &shape[1..],
+                        &strides[1..],
+                        row * strides[0],
+                    )
+                })
+                .collect::<Result<Vec<_>, _>>()?,
+        )
+    };
     Ok(map([
         ("data", nested),
         (
             "shape",
             Value::Array(
-                shape
+                selected_shape
                     .iter()
                     .map(|&n| Value::Integer((n as u64).into()))
                     .collect(),
@@ -219,15 +331,34 @@ fn scalar(bytes: &[u8], kind: u8, big_endian: bool) -> Result<Value, String> {
     })
 }
 
-fn nest(values: &[Value], shape: &[usize], strides: &[usize], offset: usize) -> Value {
+fn nest_npy(
+    data: &[u8],
+    kind: u8,
+    width: usize,
+    big_endian: bool,
+    shape: &[usize],
+    strides: &[usize],
+    offset: usize,
+) -> Result<Value, String> {
     if shape.is_empty() {
-        values[offset].clone()
+        let start = offset * width;
+        scalar(&data[start..start + width], kind, big_endian)
     } else {
-        Value::Array(
+        Ok(Value::Array(
             (0..shape[0])
-                .map(|i| nest(values, &shape[1..], &strides[1..], offset + i * strides[0]))
-                .collect(),
-        )
+                .map(|i| {
+                    nest_npy(
+                        data,
+                        kind,
+                        width,
+                        big_endian,
+                        &shape[1..],
+                        &strides[1..],
+                        offset + i * strides[0],
+                    )
+                })
+                .collect::<Result<Vec<_>, _>>()?,
+        ))
     }
 }
 
@@ -305,12 +436,101 @@ mod tests {
             .read_to_end(&mut entry)
             .unwrap();
         let mut exact = 3;
-        assert!(decode_npy(&entry, &mut exact).is_ok());
+        assert!(decode_npy(&entry, &mut exact, RowSelection::all()).is_ok());
         assert_eq!(exact, 0);
         assert!(
-            decode_npy(&entry, &mut 2)
+            decode_npy(&entry, &mut 2, RowSelection::all())
                 .unwrap_err()
                 .contains("array-node limit")
         );
+    }
+
+    #[test]
+    fn row_selection_is_applied_before_values_are_built() {
+        let encoded = decode_with_selection(
+            &fixture("compressed.npz"),
+            RowSelection {
+                every: 2,
+                start: 1,
+                max_rows: Some(1),
+            },
+        )
+        .unwrap();
+        let value: Value = ciborium::from_reader(encoded.as_slice()).unwrap();
+        let arrays = value.as_map().unwrap();
+        let matrix = arrays
+            .iter()
+            .find(|(name, _)| name == &Value::Text("matrix".into()))
+            .unwrap()
+            .1
+            .as_map()
+            .unwrap();
+        let data = &matrix
+            .iter()
+            .find(|(name, _)| name == &Value::Text("data".into()))
+            .unwrap()
+            .1;
+        assert_eq!(
+            data,
+            &Value::Array(vec![Value::Array(vec![
+                Value::Float(3.0),
+                Value::Float(4.0),
+                Value::Float(5.0),
+            ])])
+        );
+        let shape = &matrix
+            .iter()
+            .find(|(name, _)| name == &Value::Text("shape".into()))
+            .unwrap()
+            .1;
+        assert_eq!(
+            shape,
+            &Value::Array(vec![Value::Integer(1.into()), Value::Integer(3.into())])
+        );
+    }
+
+    #[test]
+    fn row_selection_still_validates_omitted_values() {
+        let result = decode_with_selection(
+            &fixture("uint64-overflow.npz"),
+            RowSelection {
+                every: 2,
+                start: 1,
+                max_rows: Some(0),
+            },
+        )
+        .unwrap_err();
+        assert!(result.contains("exact integer range"));
+    }
+
+    #[test]
+    fn row_selection_options_are_validated() {
+        for (options, message) in [
+            (
+                Value::Map(vec![(
+                    Value::Text("every".into()),
+                    Value::Integer(0.into()),
+                )]),
+                "every must be a positive integer",
+            ),
+            (
+                Value::Map(vec![(
+                    Value::Text("start".into()),
+                    Value::Integer((-1).into()),
+                )]),
+                "start must be a non-negative integer",
+            ),
+            (
+                Value::Map(vec![(
+                    Value::Text("max-rows".into()),
+                    Value::Text("many".into()),
+                )]),
+                "max-rows must be a non-negative integer or none",
+            ),
+        ] {
+            let mut encoded = Vec::new();
+            ciborium::into_writer(&options, &mut encoded).unwrap();
+            assert!(RowSelection::parse(&encoded).unwrap_err().contains(message));
+        }
     }
 }

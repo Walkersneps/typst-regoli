@@ -1,4 +1,4 @@
-#import "/src/lib.typ": decode-npz
+#import "/src/lib.typ": decode-npz, npz
 
 #let arrays = decode-npz(
   read("../fixtures/compressed.npz", encoding: none),
@@ -123,6 +123,37 @@
   assert.eq(type(arrays.at("matrix").data.at(0).at(0)), float)
   assert.eq(type(arrays.at("int64").data.at(0)), int)
   assert.eq(type(arrays.at("bools").data.at(0).at(0)), bool)
+
+  let source = read("../fixtures/compressed.npz", encoding: none)
+  assert.eq(
+    decode-npz(source, every: 2).matrix,
+    ((0.0, 1.0, 2.0),),
+  )
+  assert.eq(
+    decode-npz(source, start: 1, max-rows: 1).matrix,
+    ((3.0, 4.0, 5.0),),
+  )
+  assert.eq(
+    decode-npz(source, every: 2, start: 1, max-rows: 1).matrix,
+    ((3.0, 4.0, 5.0),),
+  )
+  assert.eq(npz(source, every: 2, start: 1).matrix, ((3.0, 4.0, 5.0),))
+  assert.eq(
+    decode-npz(source, every: 2, start: 1, metadata: true).matrix.shape,
+    (1, 3),
+  )
+  assert.eq(
+    decode-npz(source, every: 2, start: 1, metadata: true).matrix.data,
+    ((3.0, 4.0, 5.0),),
+  )
+  let sampled = decode-npz(source, every: 2, start: 1, metadata: true)
+  assert.eq(sampled.fortran.shape, (1, 3, 4))
+  assert.eq(
+    sampled.fortran.data,
+    (((12, 13, 14, 15), (16, 17, 18, 19), (20, 21, 22, 23)),),
+  )
+  assert.eq(sampled.scalar.data, 42)
+  assert.eq(decode-npz(source, max-rows: 0).matrix, ())
 
   let stored = decode-npz(read("../fixtures/stored.npz", encoding: none))
   assert.eq(stored.matrix, ((0.0, 1.0, 2.0), (3.0, 4.0, 5.0)))

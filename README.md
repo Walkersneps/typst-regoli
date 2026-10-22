@@ -52,18 +52,27 @@ You can now compile your document as usual.
 
 ## API
 
-### `decode-npz(source, metadata: false)`
+### `decode-npz(source, metadata: false, every: 1, start: 0, max-rows: none)`
 
 - `source`: raw `bytes`, normally obtained with `read(path, encoding: none)`.
 - `metadata`: boolean, default `false`.
+- `every`: positive integer; return one row every `N` rows, default `1` (all rows).
+- `start`: non-negative, zero-based index of the first row to return, default `0`.
+- `max-rows`: non-negative maximum number of rows to return after applying
+  `every` and `start`; `none` (the default) returns all matching rows.
 - Returns a dictionary keyed by archive member name, removing only the final
   `.npy` suffix. Names such as `nested/name` are preserved; use `.at(name)`
   when a name is not a Typst identifier. Positional `numpy.savez` arrays
   become `arr_0`, `arr_1`, and so on.
 
 By default, values are nested Typst arrays, indexed in logical NumPy axis
-order regardless of C/Fortran storage order. A zero-dimensional NumPy array
-becomes a scalar; an empty dimension becomes an empty Typst array.
+order regardless of C/Fortran storage order. Row selection applies to the
+first axis of each non-scalar array; a zero-dimensional NumPy array remains a
+scalar. For example, `decode-npz(source, every: 2, start: 1, max-rows: 10)`
+returns rows 1, 3, 5, and so on, capped at ten rows per array. An empty
+dimension becomes an empty Typst array. Selection happens in the decoder
+before output values are constructed; the archive is still fully read and
+validated, including values in omitted rows.
 
 Enable metadata to retain exact shapes, including dimensions after a zero:
 
@@ -82,9 +91,10 @@ Each metadata value is a dictionary with `data`, `shape`, `dtype`, and
 `fortran-order`. `shape` is an array of dimensions; scalars have shape `()`.
 An archive with no arrays returns `(:)`.
 
-### `npz(source, metadata: false)`
+### `npz(source, metadata: false, every: 1, start: 0, max-rows: none)`
 
-Wrapper around `decode-npz` that accepts either a file path or raw bytes.
+Wrapper around `decode-npz` that accepts either a file path or raw bytes and
+forwards the same options.
 
 ## Supported data and limitations
 

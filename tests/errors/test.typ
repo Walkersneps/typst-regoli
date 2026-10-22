@@ -45,3 +45,15 @@
   () => decode-npz(bytes(""), metadata: "yes"),
   "metadata must be a boolean",
 )
+#expect-diagnostic(
+  () => decode-npz(bytes(""), every: 0),
+  "every must be a positive integer",
+)
+#expect-diagnostic(
+  () => decode-npz(bytes(""), start: -1),
+  "start must be a non-negative integer",
+)
+#expect-diagnostic(
+  () => decode-npz(bytes(""), max-rows: -1),
+  "max-rows must be a non-negative integer or none",
+)
