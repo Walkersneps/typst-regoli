@@ -1,12 +1,22 @@
 use crate::MAX_RANK;
 
+/// The validated fields and data payload of one NPY file.
 pub struct Header<'a> {
+    /// Primitive dtype descriptor, such as `<f8`.
     pub dtype: String,
+    /// Logical axis lengths in NumPy order.
     pub shape: Vec<usize>,
+    /// Whether elements are stored in Fortran (column-major) order.
     pub fortran: bool,
+    /// Bytes immediately following the NPY header.
     pub data: &'a [u8],
 }
 
+/// Parse the NPY preamble and its restricted, dictionary-shaped header.
+///
+/// Only standard primitive dtype descriptors and the three required header
+/// fields are accepted; the header is parsed as data, never evaluated as
+/// Python code.
 pub fn parse(bytes: &[u8]) -> Result<Header<'_>, String> {
     if bytes.get(..6) != Some(b"\x93NUMPY") {
         return Err("invalid NPY magic signature".into());
@@ -33,6 +43,8 @@ pub fn parse(bytes: &[u8]) -> Result<Header<'_>, String> {
     if length > 65536 {
         return Err("NPY header exceeds 64 KiB".into());
     }
+    // Header lengths are little-endian in every supported NPY version. Keep
+    // the payload slice borrowed from the original input instead of copying it.
     let end = prefix + length;
     let raw = bytes.get(prefix..end).ok_or("truncated NPY header")?;
     if raw.last() != Some(&b'\n') {
@@ -88,17 +100,20 @@ struct Parser<'a> {
 }
 
 impl Parser<'_> {
+    /// Advance past ASCII whitespace at the current input position.
     fn whitespace(&mut self) {
         while self.input.first().is_some_and(u8::is_ascii_whitespace) {
             self.input = &self.input[1..];
         }
     }
 
+    /// Return the next non-whitespace byte without consuming it.
     fn peek(&mut self) -> Option<u8> {
         self.whitespace();
         self.input.first().copied()
     }
 
+    /// Consume `byte` if it is the next non-whitespace byte.
     fn consume(&mut self, byte: u8) -> bool {
         if self.peek() == Some(byte) {
             self.input = &self.input[1..];
@@ -108,6 +123,7 @@ impl Parser<'_> {
         }
     }
 
+    /// Require and consume `byte`, otherwise return a header syntax error.
     fn expect(&mut self, byte: u8) -> Result<(), String> {
         if self.consume(byte) {
             Ok(())
@@ -116,6 +132,7 @@ impl Parser<'_> {
         }
     }
 
+    /// Read an unescaped ASCII string delimited by matching single or double quotes.
     fn string(&mut self) -> Result<String, String> {
         let quote = self.peek().ok_or("truncated NPY string")?;
         if !matches!(quote, b'\'' | b'"') {
@@ -136,6 +153,10 @@ impl Parser<'_> {
         Ok(result)
     }
 
+    /// Parse a tuple-like sequence of non-negative dimensions.
+    ///
+    /// A trailing comma is required for a one-dimensional shape, matching
+    /// Python's syntax for a single-item tuple.
     fn shape(&mut self) -> Result<Vec<usize>, String> {
         self.expect(b'(')?;
         let mut shape = Vec::new();
@@ -170,6 +191,7 @@ impl Parser<'_> {
 mod tests {
     use super::*;
 
+    /// Build a minimal NPY v1 file from a textual header for parser tests.
     fn npy(header: &str) -> Vec<u8> {
         let raw = format!("{header}\n");
         let mut bytes = b"\x93NUMPY\x01\x00".to_vec();
@@ -179,6 +201,7 @@ mod tests {
     }
 
     #[test]
+    /// Accept header fields in any order and either quote style.
     fn permits_header_key_order_and_quote_styles() {
         let data = npy(r#"{"shape": (2, 0), "fortran_order": True, "descr": ">f4"}"#);
         let header = parse(&data).unwrap();
@@ -188,6 +211,7 @@ mod tests {
     }
 
     #[test]
+    /// Reject missing, duplicated, malformed, oversized, or trailing header data.
     fn rejects_malformed_headers() {
         for header in [
             "{}",
@@ -206,6 +230,7 @@ mod tests {
     }
 
     #[test]
+    /// Accept a header exactly at the size limit and reject one byte over it.
     fn header_size_limit_is_exact() {
         for size in [65536u32, 65537] {
             let mut bytes = b"\x93NUMPY\x02\0".to_vec();

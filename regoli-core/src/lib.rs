@@ -1,3 +1,9 @@
+//! Decode NumPy NPZ archives into CBOR values that Typst can consume.
+//!
+//! The decoder is deliberately self-contained: it reads stored/DEFLATE ZIP
+//! entries, validates primitive NPY arrays, and enforces fixed resource limits
+//! without accessing the filesystem or executing Python object data.
+
 use ciborium::value::Value;
 use std::io::{Cursor, Read};
 
@@ -19,6 +25,7 @@ struct RowSelection {
 }
 
 impl RowSelection {
+    /// Return the default selection, which includes every row.
     fn all() -> Self {
         Self {
             every: 1,
@@ -27,6 +34,7 @@ impl RowSelection {
         }
     }
 
+    /// Decode and validate row-selection options from a CBOR map.
     fn parse(bytes: &[u8]) -> Result<Self, String> {
         let value: Value = ciborium::from_reader(bytes).map_err(error)?;
         let Value::Map(fields) = value else {
@@ -70,6 +78,7 @@ impl RowSelection {
         })
     }
 
+    /// Yield selected first-axis row indices without allocating an index list.
     fn rows(self, count: usize) -> impl Iterator<Item = usize> {
         (self.start..count)
             .step_by(self.every)
@@ -77,6 +86,7 @@ impl RowSelection {
     }
 }
 
+/// Check values that have constraints beyond their bit-level representation.
 fn validate_scalar(bytes: &[u8], kind: u8, big_endian: bool) -> Result<(), String> {
     if kind == b'u' {
         i64::try_from(unsigned(bytes, big_endian))
@@ -85,10 +95,12 @@ fn validate_scalar(bytes: &[u8], kind: u8, big_endian: bool) -> Result<(), Strin
     Ok(())
 }
 
+/// Prefix an error with the decoder's name for clear Typst diagnostics.
 fn error(message: impl std::fmt::Display) -> String {
     format!("regoli: {message}")
 }
 
+/// Build a CBOR map from static field names and their values.
 fn map(fields: impl IntoIterator<Item = (&'static str, Value)>) -> Value {
     Value::Map(
         fields
@@ -104,12 +116,20 @@ pub fn decode(input: &[u8]) -> Result<Vec<u8>, String> {
 }
 
 /// Decode an archive, applying row selection before constructing output values.
+///
+/// `options` is a CBOR map with optional `every`, `start`, and `max-rows`
+/// fields. The returned bytes encode a map of array names to array metadata.
 #[cfg_attr(target_arch = "wasm32", wasm_minimal_protocol::wasm_func)]
 pub fn decode_with_options(input: &[u8], options: &[u8]) -> Result<Vec<u8>, String> {
     let selection = RowSelection::parse(options)?;
     decode_with_selection(input, selection)
 }
 
+/// Validate an NPZ archive and encode its arrays as a CBOR map.
+///
+/// ZIP member sizes are checked against both advertised and actual decompressed
+/// lengths, and reading each member to EOF lets the ZIP implementation verify
+/// its checksum before the NPY payload is accepted.
 fn decode_with_selection(input: &[u8], selection: RowSelection) -> Result<Vec<u8>, String> {
     if input.len() > MAX_BYTES {
         return Err(error("archive exceeds the 64 MiB input limit"));
@@ -169,6 +189,10 @@ fn decode_with_selection(input: &[u8], selection: RowSelection) -> Result<Vec<u8
     Ok(encoded)
 }
 
+/// Parse one NPY array, validate all its values, and build its nested data.
+///
+/// The shared node budget includes both array elements and their nested
+/// containers, preventing high-rank or empty-shaped arrays from evading limits.
 fn decode_npy(bytes: &[u8], budget: &mut usize, selection: RowSelection) -> Result<Value, String> {
     let header::Header {
         dtype,
@@ -192,10 +216,12 @@ fn decode_npy(bytes: &[u8], budget: &mut usize, selection: RowSelection) -> Resu
     if count.checked_mul(width) != Some(data.len()) {
         return Err("NPY data length does not match shape and dtype".into());
     }
-    // Validate every element, including rows omitted from the output.
+    // Validate omitted rows too: selection reduces output size, not validation.
     for chunk in data.chunks_exact(width) {
         validate_scalar(chunk, kind, big_endian)?;
     }
+    // Strides translate logical axis coordinates to flat storage offsets;
+    // Fortran order makes the first axis contiguous, unlike C order.
     let mut strides = vec![1usize; shape.len()];
     if fortran {
         for i in 1..shape.len() {
@@ -254,6 +280,7 @@ fn decode_npy(bytes: &[u8], budget: &mut usize, selection: RowSelection) -> Resu
     ]))
 }
 
+/// Parse a primitive NPY dtype descriptor into kind, byte width, and byte order.
 fn parse_dtype(dtype: &str) -> Result<(u8, usize, bool), String> {
     let bytes = dtype.as_bytes();
     if bytes.get(1) == Some(&b'O') {
@@ -284,6 +311,7 @@ fn parse_dtype(dtype: &str) -> Result<(u8, usize, bool), String> {
     Ok((kind, width, bytes[0] == b'>'))
 }
 
+/// Read an unsigned integer from a one- to eight-byte slice.
 fn unsigned(bytes: &[u8], big_endian: bool) -> u64 {
     let mut padded = [0u8; 8];
     if big_endian {
@@ -295,6 +323,7 @@ fn unsigned(bytes: &[u8], big_endian: bool) -> u64 {
     }
 }
 
+/// Interpret IEEE half-, single-, or double-precision bytes as an `f64`.
 fn floating(bytes: &[u8], big_endian: bool) -> f64 {
     let bits = unsigned(bytes, big_endian);
     match bytes.len() {
@@ -305,6 +334,7 @@ fn floating(bytes: &[u8], big_endian: bool) -> f64 {
     }
 }
 
+/// Convert one encoded NumPy scalar to its corresponding CBOR value.
 fn scalar(bytes: &[u8], kind: u8, big_endian: bool) -> Result<Value, String> {
     Ok(match kind {
         b'b' => Value::Bool(bytes[0] != 0),
@@ -331,6 +361,7 @@ fn scalar(bytes: &[u8], kind: u8, big_endian: bool) -> Result<Value, String> {
     })
 }
 
+/// Reconstruct a nested array by walking logical axes with storage strides.
 fn nest_npy(
     data: &[u8],
     kind: u8,
@@ -367,6 +398,7 @@ mod tests {
     use super::*;
     use std::path::Path;
 
+    /// Load a named generated fixture from the repository's fixture directory.
     fn fixture(name: &str) -> Vec<u8> {
         let repo_root = Path::new(env!("CARGO_MANIFEST_DIR"))
             .parent()
@@ -376,6 +408,7 @@ mod tests {
     }
 
     #[test]
+    /// Confirm compressed and stored ZIP encodings produce identical output.
     fn compressed_and_stored_match() {
         let stored = decode(&fixture("stored.npz")).unwrap();
         let compressed = decode(&fixture("compressed.npz")).unwrap();
@@ -383,6 +416,7 @@ mod tests {
     }
 
     #[test]
+    /// Check that malformed archives, unsupported data, and resource-limit violations fail.
     fn rejects_invalid_archives() {
         for (name, message) in [
             ("object.npz", "unsupported dtype"),
@@ -410,6 +444,7 @@ mod tests {
     }
 
     #[test]
+    /// Ensure an archive with no members decodes to an empty map.
     fn empty_archive_is_a_dictionary() {
         let encoded = decode(&fixture("empty.npz")).unwrap();
         let value: Value = ciborium::from_reader(encoded.as_slice()).unwrap();
@@ -417,6 +452,7 @@ mod tests {
     }
 
     #[test]
+    /// Reject dtype kinds, widths, or byte orders outside the supported set.
     fn rejects_unsupported_scalar_formats() {
         for dtype in [
             "<f16", "<c32", "|S4", "|V8", "<M8", "<u3", "<b2", "=i4", "|f8",
@@ -426,6 +462,7 @@ mod tests {
     }
 
     #[test]
+    /// Verify the logical-node budget accepts its exact boundary only.
     fn node_budget_boundary_is_exact() {
         let data = fixture("positional.npz");
         let mut archive = zip::ZipArchive::new(Cursor::new(data)).unwrap();
@@ -446,6 +483,7 @@ mod tests {
     }
 
     #[test]
+    /// Verify row selection occurs before nested output values are constructed.
     fn row_selection_is_applied_before_values_are_built() {
         let encoded = decode_with_selection(
             &fixture("compressed.npz"),
@@ -490,6 +528,7 @@ mod tests {
     }
 
     #[test]
+    /// Ensure row filtering never skips validation of omitted values.
     fn row_selection_still_validates_omitted_values() {
         let result = decode_with_selection(
             &fixture("uint64-overflow.npz"),
@@ -504,6 +543,7 @@ mod tests {
     }
 
     #[test]
+    /// Reject invalid option values before attempting to decode an archive.
     fn row_selection_options_are_validated() {
         for (options, message) in [
             (

@@ -1,5 +1,6 @@
 #import "/src/lib.typ": decode-npz
 
+/// Assert that an action fails with a diagnostic containing the given text.
 #let expect-diagnostic(action, fragment) = {
   let diagnostic = catch(action)
   assert(diagnostic != none, message: "Expected the operation to fail.")
@@ -12,6 +13,7 @@
   )
 }
 
+/// Assert that an action fails, regardless of the diagnostic text.
 #let expect-failure(action) = {
   let diagnostic = catch(action)
   assert(

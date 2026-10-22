@@ -8,6 +8,7 @@ ROOT = Path(__file__).resolve().parents[1] / "regoli-core"
 
 
 def main():
+    """Collect licenses for resolved WASM dependencies into the bundled notice file."""
     result = subprocess.run(
         ["cargo", "metadata", "--format-version", "1", "--locked",
          "--filter-platform", "wasm32-unknown-unknown"],
@@ -20,6 +21,8 @@ def main():
         "Generated from Cargo.lock by scripts/generate_licenses.py.",
         "regoli source is AGPL-3.0-only licensed. Its bundled WASM contains third-party code.",
     ]
+    # Cargo metadata includes the full dependency graph; only emit packages
+    # reachable for the actual WebAssembly target.
     for package in sorted(metadata["packages"], key=lambda item: item["name"]):
         if package["id"] not in resolved or package["name"] == "regoli":
             continue

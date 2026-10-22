@@ -1,7 +1,12 @@
 #let decoder = plugin("../regoli.wasm")
 
-/// Decode an NPZ byte buffer into a dictionary of arrays.
-/// With metadata enabled, each value has data, shape, dtype, and fortran-order fields.
+/// Decode a NumPy NPZ byte buffer into a dictionary keyed by array name.
+///
+/// `source` must be bytes, usually from `read(path, encoding: none)`.
+/// `metadata` controls whether each value is the metadata dictionary or just
+/// its nested `data`. `every`, `start`, and `max-rows` select rows on the first
+/// axis of each non-scalar array; all archive data is still validated.
+/// Metadata dictionaries contain `data`, `shape`, `dtype`, and `fortran-order`.
 #let decode-npz(
   source,
   metadata: false,
@@ -26,14 +31,20 @@
     max-rows == none or (type(max-rows) == int and max-rows >= 0),
     message: "max-rows must be a non-negative integer or none",
   )
+  // CBOR carries selection options into the decoder, where row filtering can
+  // happen before nested Typst values are allocated.
   let options = cbor.encode((every: every, start: start, "max-rows": max-rows))
   let arrays = cbor(decoder.decode_with_options(source, options))
+  // Preserve archive names while hiding metadata unless the caller requests it.
   arrays
     .pairs()
     .map(((name, value)) => (name, if metadata { value } else { value.data }))
     .to-dict()
 }
 
+/// Load an NPZ archive from a path or bytes and decode it.
+///
+/// All options are forwarded unchanged to `decode-npz`.
 #let npz(
   source,
   metadata: false,

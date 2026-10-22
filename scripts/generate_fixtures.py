@@ -13,18 +13,21 @@ FIXTURES = ROOT / "tests" / "fixtures"
 
 
 def npy(array, version=None):
+    """Serialize an array with NumPy's own NPY writer."""
     buffer = io.BytesIO()
     np.lib.format.write_array(buffer, array, version=version)
     return buffer.getvalue()
 
 
 def archive(name, entries, compression=zipfile.ZIP_STORED):
+    """Write named NPY payloads into a ZIP archive under the fixture directory."""
     with zipfile.ZipFile(FIXTURES / name, "w", compression=compression) as output:
         for key, value in entries:
             output.writestr(key, value)
 
 
 def main():
+    """Generate valid and deliberately malformed NPZ fixtures for the test suite."""
     FIXTURES.mkdir(parents=True, exist_ok=True)
     arrays = {
         "matrix": np.arange(6, dtype="<f8").reshape(2, 3),
@@ -75,6 +78,7 @@ def main():
     archive("bad-crc.npz", [("data.npy", valid)])
     corrupt = bytearray((FIXTURES / "bad-crc.npz").read_bytes())
     name_length, extra_length = struct.unpack_from("<HH", corrupt, 26)
+    # Flip one payload bit while preserving the ZIP directory and recorded CRC.
     corrupt[30 + name_length + extra_length + len(valid) - 1] ^= 1
     (FIXTURES / "bad-crc.npz").write_bytes(corrupt)
     archive("too-many-nodes.npz", [("data.npy", npy(np.empty((1_000_001, 0))))])
