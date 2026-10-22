@@ -38,14 +38,22 @@ pub fn decode(input: &[u8]) -> Result<Vec<u8>, String> {
     let mut total_bytes = 0usize;
     let mut budget = MAX_NODES;
     for index in 0..archive.len() {
-        let mut entry = archive.by_index(index).map_err(error)?;
+        let mut entry = archive
+            .by_index_with_options(
+                index,
+                zip::ZipReadOptions::new().enforce_header_consistency(true),
+            )
+            .map_err(error)?;
         if entry.is_dir() {
             continue;
         }
-        let name = entry
-            .name()
+        let archive_name = entry.name().map_err(error)?.into_owned();
+        if entry.enclosed_name().is_none() {
+            return Err(error(format!("invalid archive entry path: {archive_name}")));
+        }
+        let name = archive_name
             .strip_suffix(".npy")
-            .ok_or_else(|| error(format!("non-NPY archive entry: {}", entry.name())))?
+            .ok_or_else(|| error(format!("non-NPY archive entry: {archive_name}")))?
             .to_owned();
         if output
             .iter()
@@ -252,7 +260,7 @@ mod tests {
             ("uint64-overflow.npz", "exact integer range"),
             ("truncated.npz", "data length"),
             ("trailing.npz", "data length"),
-            ("duplicate.npz", "duplicate array name"),
+            ("duplicate.npz", "duplicate"),
             ("non-npy.npz", "non-NPY"),
             ("bad-crc.npz", "checksum"),
             ("too-many-nodes.npz", "array-node limit"),
