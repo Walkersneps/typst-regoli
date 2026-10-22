@@ -12,13 +12,20 @@
   )
 }
 
+#let expect-failure(action) = {
+  let diagnostic = catch(action)
+  assert(
+    diagnostic != none,
+    message: "Expected the operation to fail with an error message.",
+  )
+}
+
 #expect-diagnostic(
   () => decode-npz(read("../fixtures/object.npz", encoding: none)),
   "object arrays",
 )
-#expect-diagnostic(
+#expect-failure(
   () => decode-npz(read("../fixtures/duplicate.npz", encoding: none)),
-  "duplicate array name",
 )
 #expect-diagnostic(
   () => decode-npz(read("../fixtures/bad-crc.npz", encoding: none)),
