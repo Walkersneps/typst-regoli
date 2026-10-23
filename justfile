@@ -36,7 +36,7 @@ lint-core:
   cargo fmt --check --manifest-path "regoli-core/Cargo.toml"
 
 lint-library:
-  typstyle --check "src/lib.typ" "examples/example.typ" "tests/decode/test.typ" "tests/errors/test.typ" "tests/package-import/test.typ" "tests/example/test.typ"
+  typstyle --check src tests
 
 lint: lint-core lint-library
 
