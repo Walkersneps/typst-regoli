@@ -30,7 +30,7 @@ np.savez_compressed(
 In your typst document, import the library:
 
 ```typst
-#import "@sneps/regoli:0.1.0" as regoli
+#import "@sneps/regoli:0.1.1" as regoli
 
 #let data = regoli.npz(path("results.npz"))
 #assert.eq(results.matrix, ((1.0, 2.0), (3.0, 4.0)))
@@ -201,7 +201,7 @@ For more information, refer to the [relevant documentation section](https://gith
 Then import with:
 
 ```typst
-#import "@local/regoli:0.1.0": decode-npz
+#import "@local/regoli:0.1.1": decode-npz
 #let results = decode-npz(read("results.npz", encoding: none))
 ```
 
@@ -230,7 +230,7 @@ just publish
 ### Typst Universe
 
 1. Fork/clone [typst/packages](https://github.com/typst/packages) and add the
-   package under `packages/preview/regoli/0.1.0`.
+   package under `packages/preview/regoli/0.1.1`.
 2. Include the runtime files (those not explicitly excluded in `typst.toml`) and,
    optionally, `examples/` with its
    `sample.npz`. Keep build outputs, test fixtures, and PDFs out of the bundle.

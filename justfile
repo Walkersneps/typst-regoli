@@ -3,7 +3,7 @@
 # End:
 bundle-file := ".dist/regoli.tar.gz"
 test-packages := "tests/output/packages"
-test-package := "tests/output/packages/local/regoli/0.1.0"
+test-package := "tests/output/packages/local/regoli/0.1.1"
 
 build:
   cd regoli-core; \
