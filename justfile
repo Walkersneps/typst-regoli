@@ -40,7 +40,7 @@ lint-library:
 
 lint: lint-core lint-library
 
-test-core:
+test-core: prepare-test
   cargo test --locked --manifest-path "regoli-core/Cargo.toml"
 
 test-library *filter: prepare-test
